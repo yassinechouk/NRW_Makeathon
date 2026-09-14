@@ -4,6 +4,8 @@ Système de vision industrielle 2D pour la détection et la classification en te
 
 Fonctionne **sans GPU**, **sans dataset lourd** et **sans réseau de neurones** : une simple caméra USB (LifeCam HD-3000), un processeur standard (CPU), et des algorithmes déterministes de vision géométrique et morphologique.
 
+![HUD Preview](refs/hud_preview.png)
+
 ---
 
 ## 1. Vue d'ensemble du projet

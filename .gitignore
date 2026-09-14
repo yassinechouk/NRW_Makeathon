@@ -21,3 +21,6 @@ Thumbs.db
 
 # Runtime generated zone
 zone.json
+
+# Dataset
+refs/*.jpg
