@@ -1,0 +1,3 @@
+[submodule "gazebo_nrw"]
+	path = gazebo_nrw
+	url = https://github.com/yassinechouk/gazebo_nrw
