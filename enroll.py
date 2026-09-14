@@ -66,8 +66,8 @@ def from_images(folder, out, background=None):
     for f in files:
         label = os.path.splitext(os.path.basename(f))[0]
         # "type2_equerre@plat.png" = une pose SUPPLEMENTAIRE du type2_equerre.
-        # Une piece 3D n'a pas la meme silhouette selon la face sur laquelle
-        # elle repose : chaque pose stable merite sa propre reference.
+        # A 3D part does not have the same silhouette depending on the face it
+        # rests on: each stable pose deserves its own reference.
         pose = None
         if "@" in label:
             label, pose = label.split("@", 1)
@@ -75,7 +75,7 @@ def from_images(folder, out, background=None):
         if img is None:
             print(f"  !! illisible : {f}")
             continue
-        # un fond propre a ce type prime sur le fond global : refs/type1_bg.png
+        # a background specific to this type overrides the global background : refs/type1_bg.png
         stem = os.path.splitext(os.path.basename(f))[0]
         own = os.path.join(os.path.dirname(f), stem + "_bg" + os.path.splitext(f)[1])
         b = cv2.imread(own) if os.path.exists(own) else bg
@@ -92,14 +92,14 @@ def from_images(folder, out, background=None):
 
 
 def separation_report(clf):
-    """Deux types sont-ils separables ? On compare chaque paire de TYPES en
-    prenant le PIRE cas sur leurs poses : c'est la pose la plus ressemblante qui
-    fera l'erreur, pas la moyenne."""
+    """Are two types separable? We compare each pair of TYPES by
+    taking the WORST case on their poses: it's the most similar pose that
+    will make the error, not the average."""
     from part_classifier import align_iou, chamfer_similarity
     cls = clf.classes
     if len(cls) < 2:
         return
-    print("\nsimilitude entre types enroles (plus bas = mieux separes) :")
+    print("\nsimilarity between enrolled types (lower = better separated):")
     for a in range(len(cls)):
         for b in range(a + 1, len(cls)):
             worst_iou, worst_ch = 0.0, 0.0
@@ -111,28 +111,28 @@ def separation_report(clf):
                           if aligned is not None else 0.0)
                     if iou + ch > worst_iou + worst_ch:
                         worst_iou, worst_ch = iou, ch
-            # une paire n'est vraiment confondable que si les DEUX mesures la
-            # rapprochent : l'aire ET le trace du contour
-            flag = "  <-- TROP SEMBLABLES" if (worst_iou > 0.80 and worst_ch > 0.70) \
-                else ("  <-- proches" if worst_iou > 0.75 else "")
+            # a pair is only truly confusable if BOTH measures
+            # bring it closer: area AND contour trace
+            flag = "  <-- TOO SIMILAR" if (worst_iou > 0.80 and worst_ch > 0.70) \
+                else ("  <-- close" if worst_iou > 0.75 else "")
             print(f"  {cls[a][:16]:16s} vs {cls[b][:16]:16s}  "
                   f"aire={worst_iou:.3f}  contour={worst_ch:.3f}{flag}")
     n = {c: len(clf.poses(c)) for c in cls}
-    print("  poses par type : " + ", ".join(f"{k}={v}" for k, v in n.items()))
+    print("  poses per type: " + ", ".join(f"{k}={v}" for k, v in n.items()))
     if any(v == 1 for v in n.values()):
-        print("  ! un type avec UNE seule pose ne sera reconnu que pose comme sa")
-        print("    reference. Si la piece tient sur plusieurs faces, enrole chaque face.")
+        print("  ! a type with ONE pose will only be recognized if placed like its")
+        print("    reference. Si la piece tient sur plusieurs faces, enrolled chaque face.")
 
 
 def live(camera, out, width, height):
     clf = PartClassifier()
     cap = open_camera(camera, width, height)
     bg = None
-    print("ETAPE 1 : scene VIDE, appuyez sur b pour calibrer le fond.")
-    print("ETAPE 2 : posez une piece, appuyez sur son chiffre (1..9).")
-    print("          RETOURNEZ-LA sur une autre face stable et rappuyez sur le")
-    print("          MEME chiffre : c'est une pose de plus pour ce type.")
-    print("ETAPE 3 : s pour sauvegarder.   d = annuler le dernier   q = quitter")
+    print("STEP 1: EMPTY scene, press b to calibrate background.")
+    print("STEP 2: place a part, press its number (1..9).")
+    print("          TURN IT OVER on another stable face and press the")
+    print("          SAME number: it's an additional pose for this type.")
+    print("STEP 3: s to save.   d = undo last   q = quit")
     while True:
         ok, frame = cap.read()
         if not ok:
@@ -145,12 +145,12 @@ def live(camera, out, width, height):
             cv2.putText(vis, f"{cv2.contourArea(cnt):.0f} px", (x, max(20, y - 8)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         else:
-            cv2.putText(vis, "aucune piece detectee", (20, 40),
+            cv2.putText(vis, "no part detected", (20, 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         rec = ", ".join(f"{c}x{len(clf.poses(c))}" for c in clf.classes) or "-"
-        cv2.putText(vis, "enroles: " + rec, (20, height - 20),
+        cv2.putText(vis, "enrolled: " + rec, (20, height - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-        cv2.putText(vis, "fond: " + ("calibre" if bg is not None else "AUCUN - appuyez sur b"),
+        cv2.putText(vis, "fond: " + ("calibre" if bg is not None else "NONE - press b"),
                     (20, height - 48), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
         cv2.imshow("enroll", vis)
 
@@ -165,30 +165,30 @@ def live(camera, out, width, height):
                 if o:
                     acc.append(f2.astype(np.float32))
             bg = np.mean(acc, axis=0).astype(np.uint8)
-            print("fond calibre (la scene doit etre vide !)")
+            print("background calibrated (scene must be empty!)")
         if k == ord('d') and clf.labels:
-            print("annule :", clf.labels.pop())
+            print("undone:", clf.labels.pop())
             clf.refs.pop()
             clf._fit_scales()
         if ord('1') <= k <= ord('9'):
             if cnt is None:
-                print("!! rien a enroler")
+                print("!! nothing to enroll")
                 continue
             label = f"type{chr(k)}"
             sig = signature_from_mask(mask, cnt, frame.shape[0] * frame.shape[1])
-            # AJOUT, jamais remplacement : reappuyer sur la meme touche avec la
-            # piece posee autrement enregistre une pose de plus pour ce type.
+            # ADD, never replace: pressing the same key with the
+            # part placed differently saves an additional pose for this type.
             clf.labels.append(label)
             clf.refs.append(sig)
             clf._fit_scales()
-            print(f"enrole {label} — pose {len(clf.poses(label))}  aire={sig.area_px:.0f}")
+            print(f"enrolled {label} — pose {len(clf.poses(label))}  aire={sig.area_px:.0f}")
         if k == ord('s'):
             if not clf.labels:
                 print("!! nothing enrolled")
                 continue
             clf.save(out)
             contact_sheet(clf, os.path.splitext(out)[0] + "_refs.png")
-            print(f"sauvegarde -> {out}")
+            print(f"saved -> {out}")
             separation_report(clf)
     cap.release()
     cv2.destroyAllWindows()

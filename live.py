@@ -1,34 +1,34 @@
 """
-live.py — identification temps réel de la pièce devant la caméra.
+live.py — real-time identification of the part in front of the camera.
 
     python live.py --model model.npz --camera 2
 
-L'écran annonce une seule chose en grand : le TYPE. Un bip signale chaque
-décision stabilisée, pour ne pas avoir à regarder l'écran en continu.
+The screen announces one main thing largely: the TYPE. A beep signals each
+stabilized decision, so you don't have to look at the screen continuously.
 
-Une fois la décision prise elle est VERROUILLÉE : plus aucun recalcul tant que
-la scène n'a pas changé. Le résultat ne clignote donc pas, et la boucle reste
-fluide malgré un cycle d'analyse volontairement lourd.
+Once the decision is made, it is LOCKED: no more recalculation as long as
+the scene has not changed. The result therefore does not flicker, and the loop remains
+fluid despite an intentionally heavy analysis cycle.
 
-Le modèle de fond est le cœur du dispositif, pas une option : avec une caméra
-fixe, un reflet sur la table est STATIQUE, donc il appartient au fond et
-s'annule. C'est ce qui fait passer la précision de 13/30 à 27/30 sous éclairage
-dégradé (voir README). L'app le gère seule : calibration au démarrage,
-rafraîchissement continu quand la scène est vide, recalibration si le fond
-devient périmé.
+The background model is the heart of the system, not an option: with a fixed camera,
+a reflection on the table is STATIC, so it belongs to the background and
+cancels out. This is what increases precision from 13/30 to 27/30 under degraded lighting
+(see README). The app manages it alone: calibration at startup,
+continuous refresh when the scene is empty, recalibration if the background
+becomes stale.
 
-Touches
-    z   définir la zone de travail (glisser un rectangle, ENTREE pour valider)
-    c   effacer la zone de travail
-    d   afficher / masquer le détail des scores
-    b   recalibrer le fond maintenant (scène vide)
-    a   activer / désactiver le rafraîchissement automatique
-    n   ignorer le fond (mode multi-indices, moins précis)
-    m   couper / remettre le bip
-    r   forcer une nouvelle mesure (deverrouille)
-    s   enregistrer une capture
-    +/- monter / baisser le seuil d'acceptation
-    q   quitter
+Keys
+    z   define the work zone (drag a rectangle, ENTER to confirm)
+    c   clear the work zone
+    d   show / hide the score details
+    b   recalibrate the background now (empty scene)
+    a   enable / disable automatic refresh
+    n   ignore the background (multi-cue mode, less precise)
+    m   mute / unmute the beep
+    r   force a new measurement (unlocks)
+    s   save a capture
+    +/- increase / decrease the acceptance threshold
+    q   quit
 """
 import argparse
 import json
@@ -47,20 +47,20 @@ import hud
 import segmentation as S
 from part_classifier import PartClassifier, signature_from_mask
 
-# Le cycle complet (arbitrage multi-decoupages) coute ~0.5 s : exiger 6 images
-# concordantes ferait attendre 3 s. On adapte donc l'exigence a la confiance,
-# qui s'est averee fiable : au-dessus de 0.70, 29/29 justes sur les captures
-# reelles. Deux images concordantes suffisent alors ; sinon on en demande quatre.
+# The complete cycle (multi-segmentation arbitration) costs ~0.5 s: demanding 6
+# concordant frames would mean a 3s wait. We therefore adapt the requirement to the
+# confidence, which has proven reliable: above 0.70, 29/29 correct on real
+# captures. Two concordant frames are enough then; otherwise we ask for four.
 VOTE_WINDOW = 6
 VOTE_MIN = 4
 VOTE_MIN_SURE = 2
 CONF_SURE = 0.70
-# Une fois la decision prise, elle est VERROUILLEE : on ne recalcule plus tant
-# que la scene n'a pas change. Deux raisons. D'abord l'affichage : un resultat
-# valide ne doit pas clignoter ni se remettre en question tout seul. Ensuite le
-# cout : l'arbitrage multi-candidats est lourd (le modele departage plusieurs
-# decoupages possibles), ce qui n'est tenable que parce qu'il ne tourne qu'au
-# changement de piece.
+# Once the decision is made, it is LOCKED: we no longer recalculate as long
+# as the scene has not changed. Two reasons. First, the display: a valid
+# result must not flicker or question itself. Second, the
+# cost: multi-candidate arbitration is heavy (the model decides between several
+# possible segmentations), which is only tenable because it only runs when
+# the part changes.
 CHANGE_FRAC = 0.020        # part de la zone qui doit changer pour deverrouiller
 CHANGE_FRAMES = 3          # images consecutives, pour ignorer un scintillement
 CALIB_FRAMES = 12
@@ -164,8 +164,8 @@ class Background:
             return
         self.empty_streak += 1
         if self.empty_streak >= EMPTY_BEFORE_REFRESH:
-            # fusion lente : le fond suit la derive d'eclairage sans jamais
-            # absorber une piece posee brievement
+            # slow fusion: the background tracks lighting drift without ever
+            # absorbing a briefly placed part
             self.model = cv2.addWeighted(self.model, 1 - BG_ALPHA, frame, BG_ALPHA, 0)
 
 
@@ -252,9 +252,9 @@ def render(frame, clf, res, cnt, stable, bg, fps, anim, show_details, stale, mut
     else:
         conf = res["confidence"] if res else 0.0
         c = hud.type_color(clf.classes.index(stable))
-        # Affichage volontairement sobre : le bandeau donne le TYPE dans sa
-        # couleur et le pourcentage, rien d'autre. La jauge fine sous le titre
-        # suffit a voir d'un coup d'oeil si la mesure est franche ou serree.
+        # Intentionally sober display: the banner gives the TYPE in its
+        # color and percentage, nothing else. The thin gauge under the title
+        # is enough to see at a glance if the measurement is clear or close.
         badge_bottom = hud.type_badge(vis, display_name(stable), c, conf, anim,
                                       subtitle=f"confiance {conf:.0%}")
 
@@ -293,26 +293,26 @@ def main():
     ap.add_argument("--height", type=int, default=720)
     ap.add_argument("--no-bg", action="store_true")
     ap.add_argument("--no-beep", action="store_true")
-    ap.add_argument("--details", action="store_true", help="afficher les scores")
+    ap.add_argument("--details", action="store_true", help="show scores")
     ap.add_argument("--open-set", action="store_true",
-                    help="autoriser la reponse UNKNOWN (si des pieces hors "
-                         "catalogue peuvent se presenter)")
+                    help="allow UNKNOWN response (if parts outside "
+                         "catalog can appear)")
     ap.add_argument("--zone", default="zone.json",
-                    help="fichier ou la zone de travail est memorisee")
+                    help="file where the work zone is saved")
     a = ap.parse_args()
 
     clf = PartClassifier.load(a.model)
     if a.open_set:
         clf.OPEN_SET = True
     area_range = clf.area_frac_range()
-    print("types charges :", ", ".join(f"{display_name(c)} x{len(clf.poses(c))} poses"
+    print("types loaded:", ", ".join(f"{display_name(c)} x{len(clf.poses(c))} poses"
                                        for c in clf.classes))
     if area_range:
-        print(f"aire attendue d'une piece : {area_range[0]*100:.1f}% a "
-              f"{area_range[1]*100:.1f}% du cadre analyse")
-    print("mode :", "monde ouvert (UNKNOWN possible)" if clf.OPEN_SET
-          else "monde ferme (toujours un type, la confiance dit si c'est sur)")
-    print("Laissez la scene VIDE quelques secondes : calibration du fond.")
+        print(f"expected part area: {area_range[0]*100:.1f}% a "
+              f"{area_range[1]*100:.1f}% of the analyzed frame")
+    print("mode:", "open world (UNKNOWN possible)" if clf.OPEN_SET
+          else "closed world (always a type, confidence says if sure)")
+    print("Leave the scene EMPTY for a few seconds: background calibration.")
     cap = open_camera(a.camera, a.width, a.height)
     beeper = Beeper(enabled=not a.no_beep)
 
@@ -320,7 +320,7 @@ def main():
     if os.path.exists(a.zone):
         try:
             zone = tuple(json.load(open(a.zone)))
-            print(f"zone de travail chargee : {zone}")
+            print(f"work zone loaded: {zone}")
         except Exception:
             zone = None
 
@@ -343,10 +343,10 @@ def main():
             bg.feed_calibration(frame)
             res, cnt, stable = None, None, None
         elif dec.state == Decision.VERROUILLE:
-            # rien a recalculer : on surveille seulement si la scene a change
+            # nothing to recalculate: we only monitor if the scene has changed
             res, cnt, stable = dec.res, dec.cnt, dec.label
             if dec.scene_changed(frame, zone):
-                print("scene modifiee -> nouvelle mesure")
+                print("scene modified -> new measurement")
                 dec.unlock()
                 votes.clear()
                 stable = prev_stable = None
@@ -361,7 +361,7 @@ def main():
                 bg.observe(frame, False)
             else:
                 bg.observe(frame, True)
-                # le modele arbitre entre les decoupages possibles
+                # the model arbitrates between possible segmentations
                 res, mask, cnt = clf.classify_candidates(cands, fa)
                 votes.append(res["label"] if res else None)
 
@@ -381,17 +381,17 @@ def main():
                     beeper.beep()
                     if res:
                         print(f"  {display_name(stable)}   confiance {res['confidence']:.2f}"
-                              f"   ({res.get('n_candidates', 0)} decoupages examines)")
+                              f"   ({res.get('n_candidates', 0)} segmentations examined)")
                 prev_stable = stable
 
-            # decision stabilisee et exploitable -> on la fige
+            # stabilized and usable decision -> we freeze it
             if stable not in (None, "UNKNOWN") and res is not None and cnt is not None:
                 dec.lock(stable, res, cnt, frame, zone)
 
             if bg.model is not None and i % 30 == 0:
                 stale = S.background_is_stale(frame, bg.model)
                 if stale and bg.auto and all(v is None for v in votes):
-                    print("fond perime + scene vide -> recalibration")
+                    print("stale background + empty scene -> recalibration")
                     bg.start_calibration()
 
         now = time.time()
@@ -399,7 +399,7 @@ def main():
         t_prev = now
         anim = float(np.clip((now - t_change) / ANIM_SECONDS, 0, 1))
 
-        cv2.imshow("identification de pieces",
+        cv2.imshow("part identification",
                    render(frame, clf, res, cnt, stable, bg, fps, anim,
                           show_details, stale, not beeper.enabled, zone,
                           dec.state == Decision.VERROUILLE))
@@ -408,29 +408,29 @@ def main():
         if k == ord('q'):
             break
         elif k == ord('z'):
-            # la zone elimine les distracteurs clairs hors du poste (sol, carton,
-            # plan de travail) AVANT toute analyse : c'est le reglage le plus
-            # rentable quand la scene n'est pas entierement maitrisee
-            r = cv2.selectROI("zone de travail - ENTREE pour valider", frame,
+            # the zone eliminates bright distractors outside the station (floor, box,
+            # workbench) BEFORE any analysis: this is the most profitable
+            # setting when the scene is not entirely controlled
+            r = cv2.selectROI("work zone - ENTER to validate", frame,
                               showCrosshair=False)
-            cv2.destroyWindow("zone de travail - ENTREE pour valider")
+            cv2.destroyWindow("work zone - ENTER to validate")
             if r[2] > 20 and r[3] > 20:
                 zone = tuple(int(v) for v in r)
                 json.dump(zone, open(a.zone, "w"))
-                print(f"zone de travail : {zone}  (laissez de la marge : une piece"
-                      f" qui touche le bord de zone est ignoree)")
+                print(f"work zone: {zone}  (leave a margin: a part"
+                      f" touching the zone edge is ignored)")
                 bg.start_calibration()
         elif k == ord('c'):
             zone = None
             if os.path.exists(a.zone):
                 os.remove(a.zone)
-            print("zone effacee")
+            print("zone cleared")
         elif k == ord('d'):
             show_details = not show_details
         elif k == ord('m'):
             beeper.enabled = not beeper.enabled
         elif k == ord('b'):
-            print("recalibration : laissez la scene vide")
+            print("recalibration: leave scene empty")
             bg.start_calibration()
         elif k == ord('a'):
             bg.auto = not bg.auto
@@ -451,7 +451,7 @@ def main():
             cv2.imwrite(f"snaps/{ts}.png", frame)
             if bg.model is not None:
                 cv2.imwrite(f"snaps/{ts}_bg.png", bg.model)
-            print(f"capture -> snaps/{ts}.png")
+            print(f"snap -> snaps/{ts}.png")
 
     cap.release()
     cv2.destroyAllWindows()

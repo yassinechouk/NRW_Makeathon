@@ -55,7 +55,7 @@ class ShapeSignature:
     geom: np.ndarray        # 6 geometric ratios
     hu: np.ndarray          # 7 log-Hu moments
     area_px: float          # raw pixel area (scale cue, only if camera is fixed)
-    area_frac: float = -1.0 # aire rapportee a celle du cadre analyse. C'est
+    area_frac: float = -1.0 # aire rapportee a celle of the analyzed frame. C'est
                             # CETTE grandeur qui se compare d'une prise de vue a
                             # l'autre, pas les pixels.
 
@@ -275,7 +275,7 @@ class PartClassifier:
     # enroles. Dans ce cas repondre UNKNOWN n'apporte rien - il faut trancher et
     # montrer a quel point c'est serre. UNKNOWN n'est alors emis que si aucune
     # piece n'a ete segmentee. Mettre a True pour retrouver le rejet (utile si
-    # des pieces hors catalogue peuvent se presenter).
+    # des pieces hors catalog can appear).
     OPEN_SET = False
     # Nombre de references qui passent l'alignement complet. Au-dela, le cout
     # croit lineairement avec le nombre de poses enrolees (20 refs = 198 ms).
@@ -380,9 +380,9 @@ class PartClassifier:
             d = self._desc_distance(dq, ref)
             dsim = float(np.exp(-d))                     # 1.0 = identical
             fused = self.W_IOU * iou + self.W_CHAMFER * cham + self.W_DESC * dsim
-            # plusieurs poses par type : on retient la MEILLEURE. Une piece ne
-            # peut etre posee que d'une facon a la fois ; les autres poses du
-            # meme type ne sont pas des concurrentes, ce sont des alternatives.
+            # several poses per type: we keep the BEST. A part can only
+            # be placed one way at a time; the other poses of the
+            # same type are not competitors, they are alternatives.
             if fused > scores.get(label, -1.0):
                 scores[label] = float(fused)
                 details[label] = dict(iou=float(iou), chamfer_sim=float(cham),
@@ -393,8 +393,8 @@ class PartClassifier:
         margin = best[1] - second[1]
         ok = best[1] >= self.MIN_SCORE and margin >= self.MIN_MARGIN
         conf = self._confidence(ranked)
-        # en monde ferme on tranche toujours ; `accepted` reste calcule et sert
-        # a signaler une decision peu sure au lieu de la masquer
+        # in a closed world we always decide; `accepted` remains calculated and serves
+        # to signal an unsure decision instead of hiding it
         label = best[0] if (ok or not self.OPEN_SET) else "UNKNOWN"
         return dict(label=label,
                     raw_label=best[0], confidence=float(np.clip(conf, 0, 1)),
@@ -404,21 +404,21 @@ class PartClassifier:
                     mirrored=details[best[0]]["mirrored"])
 
     def _desc_distance(self, dq, ref):
-        """Distance sur les descripteurs invariants, normalisee par la dispersion
-        observee entre les references enrolees."""
+        """Distance on invariant descriptors, normalized by the dispersion
+        observed among enrolled references."""
         diff = dq - ref.descriptor()
         if self._scales is not None:
             diff = diff / self._scales
         return float(np.linalg.norm(diff) / np.sqrt(len(dq)))
 
     def _confidence(self, ranked):
-        """Confiance = probabilite du gagnant, moderee par la qualite absolue.
+        """Confidence = probability of the winner, moderated by absolute quality.
 
-        Un softmax sur les scores repond a la vraie question ("a quel point le
-        gagnant domine-t-il ses concurrents ?") au lieu de ne regarder que
-        l'ecart avec le second. Le facteur de qualite empeche un appariement
-        mediocre mais isole d'afficher 95 % : dominer trois mauvais candidats
-        ne prouve rien.
+        A softmax on scores answers the real question ("how much does the
+        winner dominate its competitors?") instead of only looking at
+        the gap with the second. The quality factor prevents a mediocre
+        but isolated match from showing 95%: dominating three bad candidates
+        proves nothing.
         """
         vals = np.array([v for _, v in ranked], dtype=np.float64)
         if len(vals) == 1:
@@ -429,11 +429,11 @@ class PartClassifier:
         return float(np.clip(p * quality, 0, 1))
 
     def prune_poses(self, max_similarity=0.88, verbose=True):
-        """Supprime les poses redondantes d'un meme type.
+        """Removes redundant poses of the same type.
 
-        Enroler dix vues de la meme face n'apporte rien et coute cher : chaque
-        pose est un alignement de plus a chaque image. On garde un representant
-        par groupe de poses tres semblables.
+        Enrolling ten views of the same face brings nothing and is expensive: each
+        pose is an additional alignment on each image. We keep one representative
+        per group of very similar poses.
         """
         keep_idx = []
         for cls in self.classes:
@@ -461,20 +461,20 @@ class PartClassifier:
         return self
 
     def classify_candidates(self, candidates, frame_area=None):
-        """Choisit CONJOINTEMENT le masque et le type.
+        """JOINTLY chooses the mask and the type.
 
-        En monde ferme, le modele sait a quoi ressemblent les pieces : c'est
-        l'arbitre naturel entre plusieurs decoupages possibles. Un masque
-        partiel n'est explique par aucune reference et perd donc contre le
-        masque complet, la ou aucun critere local ne pouvait les separer.
+        In a closed world, the model knows what the parts look like: it is
+        the natural arbiter between several possible segmentations. A mask
+        that is partial is not explained by any reference and thus loses against the
+        complete mask, where no local criterion could separate them.
 
-        La plausibilite de segmentation reste au produit, avec un exposant
-        faible : elle empeche un decoupage absurde de gagner sur un appariement
-        de hasard, sans dominer la decision.
+        The segmentation plausibility remains at the product, with a low
+        exponent: it prevents an absurd segmentation from winning over a chance
+        match, without dominating the decision.
         """
-        # Pre-tri des candidats sur les descripteurs invariants : c'est
-        # quasi gratuit (pas d'alignement) et cela evite de payer l'appariement
-        # complet pour des decoupages manifestement absurdes.
+        # Pre-sorting of candidates on invariant descriptors: it is
+        # almost free (no alignment) and it avoids paying the full match
+        # for obviously absurd segmentations.
         scored = []
         for mask, cnt, seg_score in candidates:
             sig = signature_from_mask(mask, cnt, frame_area)

@@ -1,12 +1,12 @@
 """
-hud.py — l'affichage. Primitives de dessin propres pour OpenCV.
+hud.py — Display. Clean drawing primitives for OpenCV.
 
-OpenCV ne sait dessiner que des rectangles à angles droits et du texte crénelé.
-Tout ici sert à obtenir un rendu net : coins arrondis, panneaux translucides,
-halo autour du contour, anti-crénelage partout.
+OpenCV can only draw right-angled rectangles and aliased text.
+Everything here serves to obtain a sharp rendering: rounded corners, translucent panels,
+halo around the contour, anti-aliasing everywhere.
 
-Le parti pris : une seule information domine l'écran — le TYPE. Le reste
-(confiance, état du fond, fps) reste discret, en bas, et ne bouge pas.
+The approach: a single piece of information dominates the screen — the TYPE. The rest
+(confidence, background state, fps) remains discreet, at the bottom, and does not move.
 """
 
 from __future__ import annotations
@@ -14,14 +14,14 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-# palette, en BGR. Choisies distinctes y compris pour un daltonisme rouge-vert :
-# vert / ambre / bleu se separent par la luminance autant que par la teinte.
+# palette, in BGR. Chosen distinct including for red-green color blindness:
+# green / amber / blue are separated by luminance as much as by hue.
 TYPE_COLORS = [
-    (128, 214, 126),   # 1 — vert
-    (86, 180, 250),    # 2 — ambre
-    (235, 163, 95),    # 3 — bleu
-    (200, 130, 235),   # 4 — violet
-    (120, 235, 235),   # 5 — jaune
+    (128, 214, 126),   # 1 — green
+    (86, 180, 250),    # 2 — amber
+    (235, 163, 95),    # 3 — blue
+    (200, 130, 235),   # 4 — purple
+    (120, 235, 235),   # 5 — yellow
 ]
 GREY = (128, 124, 120)
 INK = (250, 248, 245)
@@ -56,7 +56,7 @@ def rounded_rect(img, x, y, w, h, r, color, thickness=-1):
 
 
 def panel(img, x, y, w, h, r=14, color=PANEL, alpha=0.82):
-    """Panneau translucide : le texte reste lisible sans masquer la video."""
+    """Translucent panel: text remains readable without hiding the video."""
     x, y = max(0, x), max(0, y)
     w, h = min(w, img.shape[1] - x), min(h, img.shape[0] - y)
     if w <= 0 or h <= 0:
@@ -82,7 +82,7 @@ def text(img, s, org, scale, color, thick=1, font=F, center=False, right=False):
 
 
 def glow_contour(img, cnt, color, core=2, spread=13, strength=0.45):
-    """Contour avec halo. Le halo detache la piece du fond sans cacher ses bords."""
+    """Halo contour. The halo detaches the part from the background without hiding its edges."""
     layer = np.zeros_like(img)
     cv2.drawContours(layer, [cnt], -1, color, spread, cv2.LINE_AA)
     layer = cv2.GaussianBlur(layer, (0, 0), spread / 2.2)
@@ -91,7 +91,7 @@ def glow_contour(img, cnt, color, core=2, spread=13, strength=0.45):
 
 
 def corner_brackets(img, box, color, frac=0.22, thick=3, pad=14):
-    """Crochets d'angle facon viseur : marque la zone sans l'encadrer lourdement."""
+    """Viewfinder corner brackets: marks the zone without heavily framing it."""
     x, y, w, h = box
     x, y, w, h = x - pad, y - pad, w + 2 * pad, h + 2 * pad
     L = int(min(w, h) * frac)
@@ -103,19 +103,19 @@ def corner_brackets(img, box, color, frac=0.22, thick=3, pad=14):
 
 # ------------------------------------------------------------- le badge
 def type_badge(img, label, color, confidence, anim=1.0, subtitle=None):
-    """Le bandeau principal. C'est LUI qu'on doit lire depuis l'autre bout de la piece."""
+    """The main banner. This is what must be readable from across the room."""
     H, W = img.shape[:2]
-    # unite = 1.0 a 720p. On se cale sur le PLUS PETIT cote : sinon un cadre
-    # portrait donne un bandeau qui devore l'ecran.
+    # unit = 1.0 at 720p. We scale on the SMALLEST side: otherwise a portrait
+    # frame gives a banner that devours the screen.
     u = min(W, H) / 720.0
     scale = u
     big = 2.3 * u
-    big *= 0.90 + 0.10 * anim                      # petit ressort a l'apparition
+    big *= 0.90 + 0.10 * anim                      # small spring effect on appearance
 
     pad_x, pad_y = int(40 * u), int(20 * u)
     max_bw = int(W * 0.94)
-    # le texte se retrecit jusqu'a tenir : "CALIBRATION" ne doit pas deborder
-    # du bandeau comme le ferait "TYPE 2"
+    # text shrinks to fit: "CALIBRATION" must not overflow
+    # from the banner like "TYPE 2" would
     for _ in range(40):
         (tw, th), _ = cv2.getTextSize(label, F, big, max(2, int(big * 2)))
         if tw + 2 * pad_x <= max_bw or big <= 0.5:
@@ -127,9 +127,9 @@ def type_badge(img, label, color, confidence, anim=1.0, subtitle=None):
     bx, by = (W - bw) // 2, int(H * 0.030)
 
     panel(img, bx, by, bw, bh, r=int(14 * u), alpha=0.80 * anim + 0.05)
-    # liseré de la couleur du type : l'identite visuelle de la piece
+    # type color border: the visual identity of the part
     rounded_rect(img, bx, by, bw - 1, bh - 1, int(14 * u), color, 2)
-    # bandeau de couleur a gauche, plus lisible qu'un simple cadre
+    # color band on the left, more readable than a simple frame
     cv2.rectangle(img, (bx + 3, by + int(9 * u)),
                   (bx + int(8 * u), by + bh - int(9 * u)), color, -1, cv2.LINE_AA)
 
@@ -140,7 +140,7 @@ def type_badge(img, label, color, confidence, anim=1.0, subtitle=None):
         text(img, subtitle, (W // 2, ty + int(25 * u)), 0.55 * u, DIM, 1,
              font=FS, center=True)
 
-    # jauge de confiance, fine, sous le texte
+    # confidence gauge, thin, under the text
     gx, gw = bx + pad_x, bw - 2 * pad_x
     gy = by + bh - int(12 * u)
     gh = max(3, int(5 * u))
@@ -152,7 +152,7 @@ def type_badge(img, label, color, confidence, anim=1.0, subtitle=None):
 
 
 def status_bar(img, items):
-    """Ligne d'etat discrete en bas a gauche : (texte, couleur)."""
+    """Discreet status bar bottom left: (text, color)."""
     H, W = img.shape[:2]
     s = 0.46 * max(max(W, H) / 1280.0, 0.8)
     widths = [cv2.getTextSize(t, FS, s, 1)[0][0] for t, _ in items]

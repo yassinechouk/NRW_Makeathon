@@ -3,7 +3,7 @@ segmentation.py — extraction de la pièce, robuste aux effets de lumière.
 
 Le problème réel : sur une table brillante, une nappe de reflet spéculaire est
 *plus claire* que la pièce, et si la lampe est chaude elle est aussi *beige* que
-la pièce. Aucun seuillage sur l'intensité ou la couleur ne peut trancher.
+la pièce. Aucun seuillage sur l'intensité ou la couleur ne peut decide.
 
 Ce qui tranche, mesuré sur les vraies photos :
 
@@ -14,7 +14,7 @@ Ce qui tranche, mesuré sur les vraies photos :
 
 Un reflet est une nappe *lisse* avec un bord *flou* : c'est une propriété
 géométrique de la lumière, pas de sa couleur, donc elle survit à tout changement
-d'éclairage. Une pièce a un bord franc et une surface granuleuse.
+d'éclairage. Une pièce a un bord franc et a grainy surface.
 
 D'où l'architecture, en trois temps :
 
@@ -39,7 +39,7 @@ WORK_SIDE = 720
 
 # ------------------------------------------------------------------ cue maps
 class Cues:
-    """Toutes les cartes d'indices, calculées une fois par image."""
+    """All cue maps, calculated once per image."""
 
     def __init__(self, bgr, background=None):
         h, w = bgr.shape[:2]
@@ -58,31 +58,31 @@ class Cues:
         self.L = lab[:, :, 0]
         bstar = lab[:, :, 2]
 
-        # chromaticité recentrée sur la médiane de l'image = balance des blancs
-        # implicite, donc insensible à la *couleur* de la lampe
+        # chromaticity recentered on the image median = implicit white balance
+        # thus insensitive to the *color* of the lamp
         self.warm = bstar - np.median(bstar)
 
-        # rétinex : L divisé par sa version très floue. Une nappe de lumière
-        # lisse disparaît (ratio ~1), un objet reste (ratio >> 1).
-        # Le flou large se calcule sur une miniature : un flou gaussien de
-        # sigma 200 px coute 160 ms en pleine resolution, 3 ms ici.
+        # retinex: L divided by its very blurry version. A smooth sheet of
+        # light disappears (ratio ~1), an object remains (ratio >> 1).
+        # The large blur is calculated on a thumbnail: a Gaussian blur of
+        # sigma 200 px costs 160 ms in full resolution, 3 ms here.
         self.ratio = self.L / (_big_blur(self.L, 0.28 * side) + 1e-3)
 
-        # texture : coefficient de variation local. Rapport sigma/mu, donc
-        # invariant à un changement multiplicatif d'éclairage.
+        # texture: local coefficient of variation. Ratio sigma/mu, thus
+        # invariant to a multiplicative change in lighting.
         g = cv2.GaussianBlur(self.L, (0, 0), 0.7)
         kk = 5
         mu = cv2.boxFilter(g, -1, (kk, kk))
         mu2 = cv2.boxFilter(g * g, -1, (kk, kk))
         self.tex = np.sqrt(np.maximum(mu2 - mu * mu, 0)) / (mu + 1e-3)
 
-        # contraste local egalise : quand une nappe speculaire delave une moitie
-        # de l'image, un seuillage global n'a plus de point de fonctionnement,
-        # alors qu'un contraste recalcule par tuiles retrouve la piece.
+        # equalized local contrast: when a specular reflection washes out half
+        # the image, a global threshold no longer has an operating point,
+        # whereas a contrast recalculated by tiles finds the part again.
         self.clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8)).apply(
             np.clip(self.L, 0, 255).astype(np.uint8)).astype(np.float32)
 
-        # gradient, pour la netteté de bord
+        # gradient, for edge sharpness
         gs = cv2.GaussianBlur(self.L, (0, 0), 1.0)
         gx = cv2.Sobel(gs, cv2.CV_32F, 1, 0, 3)
         gy = cv2.Sobel(gs, cv2.CV_32F, 0, 1, 3)
@@ -98,8 +98,8 @@ class Cues:
 
 
 class _HalfCues:
-    """Copie demi-resolution des cartes d'indices : la notation d'un candidat
-    n'a pas besoin du plein detail, et cela divise le cout par ~4."""
+    """Half-resolution copy of cue maps: scoring a candidate
+    does not need full detail, and this divides the cost by ~4."""
 
     def __init__(self, c):
         self.h, self.w = c.h // 2, c.w // 2
@@ -115,7 +115,7 @@ def half(c: Cues):
 
 
 def _big_blur(x, sigma, factor=8):
-    """Flou gaussien de grand rayon, calcule sur une miniature puis re-agrandi."""
+    """Large radius Gaussian blur, calculated on a thumbnail then upscaled."""
     h, w = x.shape[:2]
     sm = cv2.resize(x, (max(w // factor, 8), max(h // factor, 8)),
                     interpolation=cv2.INTER_AREA)
@@ -133,8 +133,8 @@ def _otsu(x):
 
 
 def _hysteresis(x, k_low=0.72):
-    """Seuillage par hysteresis : le remede a une piece coupee en deux par une
-    ombre.
+    """Hysteresis thresholding: the remedy for a part cut in two by an
+    shadow.
 
     Un seuil unique doit choisir entre garder la moitie sombre de la piece (et
     ramasser du fond) ou la perdre. L'hysteresis ne choisit pas : le seuil HAUT
@@ -154,7 +154,7 @@ def _hysteresis(x, k_low=0.72):
         return hi
     keep = np.zeros_like(low)
     seeds = hi > 0
-    # un label est conserve s'il contient au moins un pixel germe
+    # a label is kept if it contains at least one seed pixel
     ids = np.unique(lbl[seeds])
     for i in ids:
         if i:
@@ -175,7 +175,7 @@ def _norm01(x):
 
 # ------------------------------------------------------- A. propositions
 def propose(c: Cues):
-    """Plusieurs masques binaires candidats, issus d'indices indépendants."""
+    """Multiple candidate binary masks, from independent cues."""
     hyps = {}
     hyps["warm"] = _otsu(c.warm)
     hyps["L"] = _otsu(c.L)
@@ -188,7 +188,7 @@ def propose(c: Cues):
     hyps["hyst_warm"] = _hysteresis(c.warm)
     hyps["clahe_and_warm"] = (((_otsu(c.clahe) > 0) & (_otsu(c.warm) > 0))
                               .astype(np.uint8) * 255)
-    # fusion : un point est "pièce" s'il est à la fois chaud, contrasté et granuleux
+    # fusion: a point is "part" if it is simultaneously warm, contrasted, and grainy
     fused = (_norm01(c.warm) + _norm01(c.ratio) + _norm01(cv2.GaussianBlur(c.tex, (0, 0), 3))) / 3
     hyps["fused"] = _otsu(fused)
     if c.bgdiff is not None:
@@ -210,8 +210,8 @@ def _components(mask, h, w, min_frac=0.002, max_frac=0.60, allow_border=False):
         ff = m.copy()
         cv2.floodFill(ff, np.zeros((h + 2, w + 2), np.uint8), (0, 0), 255)
         filled = m | cv2.bitwise_not(ff)
-        # part du contour qui s'appuie sur le bord du cadre : effleurer un coin
-        # n'est pas la meme chose que perdre la moitie de la piece
+        # part of the contour that touches the frame edge: touching a corner
+        # is not the same as losing half the part
         b = np.zeros((h, w), np.uint8)
         b[:2, :] = b[-2:, :] = b[:, :2] = b[:, -2:] = 1
         edge = (cv2.dilate(filled, np.ones((3, 3), np.uint8)) - cv2.erode(
@@ -219,11 +219,11 @@ def _components(mask, h, w, min_frac=0.002, max_frac=0.60, allow_border=False):
         bf = float(np.count_nonzero(edge & (b > 0)) / max(np.count_nonzero(edge), 1))
         out.append((filled, bf))
 
-    # Une ombre qui traverse la piece la coupe en deux composantes. Chacune,
-    # notee seule, donne une silhouette partielle - et une equerre amputee de sa
-    # tete ressemble a un cylindre. On PROPOSE donc aussi leur union, pontee par
-    # une fermeture proportionnelle a la taille de l'objet. C'est un candidat de
-    # plus, pas une substitution : l'arbitrage tranche.
+    # A shadow crossing the part cuts it into two components. Each,
+    # scored alone, gives a partial silhouette - and a bracket amputated of its
+    # head resembles a cylinder. We thus also PROPOSE their union, bridged by
+    # a closure proportional to the object size. It's an additional
+    # candidate, not a substitution: arbitration decides.
     if len(out) >= 2:
         union = np.zeros((h, w), np.uint8)
         for m_, _ in out:
@@ -250,8 +250,8 @@ def _components(mask, h, w, min_frac=0.002, max_frac=0.60, allow_border=False):
 
 # ------------------------------------------------------- B. arbitrage
 def score(c: Cues, mask, border_frac=0.0, area_range=None):
-    """Note de plausibilité d'un candidat. Les indices choisis sont ceux qu'une
-    nappe de lumière ne peut pas imiter."""
+    """Plausibility score of a candidate. The chosen cues are those that a
+    sheet of light cannot imitate."""
     hc = half(c)
     mask = cv2.resize(mask, (hc.w, hc.h), interpolation=cv2.INTER_NEAREST)
     c = hc
@@ -267,33 +267,33 @@ def score(c: Cues, mask, border_frac=0.0, area_range=None):
     if inside.sum() < 40 or ring.sum() < 40 or band.sum() < 15:
         return 0.0, {}
 
-    # 1. netteté de bord — LE discriminant. Un reflet a un bord flou.
+    # 1. edge sharpness — THE discriminant. A reflection has a blurry edge.
     sharp = float(c.grad[band].mean()) / c.grad_ref
     s_sharp = float(np.clip(sharp / 0.35, 0, 1))
 
-    # 2. grain de la surface, rapporté au fond local (invariant à l'éclairage).
-    #    Fiable seulement si la pièce est assez grande en pixels. Le rapport est
-    #    plafonné : au-delà de ~4x on est sur un artefact (bord d'ombre), pas sur
-    #    une surface granuleuse.
+    # 2. surface grain, relative to the local background (illumination invariant).
+    #    Reliable only if the part is large enough in pixels. The ratio is
+    #    capped: beyond ~4x it is an artifact (shadow edge), not
+    #    a grainy surface.
     t_in = float(np.median(c.tex[inside]))
     t_bg = float(np.median(c.tex[ring]))
     texr = min(t_in / (t_bg + 1e-4), 6.0)
     s_tex = float(np.clip((texr - 1.0) / 1.5, 0, 1))
     w_tex = float(np.clip(np.sqrt(area) / 150.0, 0.25, 1.0))
 
-    # 3. contraste de chromaticité avec le fond local
+    # 3. chromaticity contrast with the local background
     s_warm = float(np.clip((c.warm[inside].mean() - c.warm[ring].mean()) / 8.0, 0, 1))
 
-    # 4. contraste de clarté avec le fond local
+    # 4. lightness contrast with the local background
     s_lum = float(np.clip((c.L[inside].mean() - c.L[ring].mean()) / 50.0, 0, 1))
 
-    # 5. plausibilité géométrique : ni poussière, ni demi-image
+    # 5. geometric plausibility: neither dust nor half-image
     frac = area / (c.h * c.w)
     s_geo = float(np.clip(min(frac / 0.012, 1.0), 0, 1) * np.clip((0.55 - frac) / 0.15, 0, 1))
 
-    # 5b. aire attendue, apprise sur les poses enrolees. Sans elle, le score
-    #     sature : un blob de 3 % et la vraie piece a 13 % obtiennent la meme
-    #     note sur tous les autres criteres.
+    # 5b. expected area, learned from enrolled poses. Without it, the score
+    #     saturates: a 3% blob and the real 13% part get the same
+    #     score on all other criteria.
     s_area = 1.0
     if area_range is not None:
         lo, hi = area_range
@@ -303,9 +303,9 @@ def score(c: Cues, mask, border_frac=0.0, area_range=None):
         elif f > hi:
             s_area = float(np.exp(-((np.log(f / hi)) ** 2) / (2 * 0.45 ** 2)))
 
-    # 6. épaisseur : un liseré d'ombre ou un bord de reflet est une bande de
-    #    quelques pixels. Une pièce a une épaisseur du même ordre que sa taille.
-    #    C'est ce qui empêche un artefact fin de gagner sur des indices locaux.
+    # 6. thickness: a shadow fringe or reflection edge is a band of
+    #    a few pixels. A part has a thickness of the same order as its size.
+    #    This is what prevents a thin artifact from winning on local cues.
     dt = cv2.distanceTransform((mask > 0).astype(np.uint8), cv2.DIST_L2, 3)
     thick = float(dt.max()) / max(np.sqrt(area), 1e-6)
     s_thick = float(np.clip((thick - 0.035) / 0.055, 0, 1))
@@ -316,14 +316,14 @@ def score(c: Cues, mask, border_frac=0.0, area_range=None):
              + 0.10 * s_lum
              + 0.08 * s_geo
              + 0.10 * s_thick)
-    # netteté de bord, géométrie et épaisseur sont éliminatoires : un candidat
-    # nul sur l'une des trois ne peut pas être rattrapé par les autres
+    # edge sharpness, geometry, and thickness are eliminatory: a candidate
+    # scoring zero on any of the three cannot be caught up by the others
     total *= (0.35 + 0.65 * s_sharp) * (0.30 + 0.70 * s_geo) * (0.15 + 0.85 * s_thick)
     total *= (0.20 + 0.80 * s_area)      # l'aire attendue est eliminatoire
-    # Une piece qui touche le bord reste recevable - sinon on jette des masques
-    # parfaits juste parce que la piece est grande dans le cadre. La penalite
-    # est PROPORTIONNELLE a la portion de contour reellement coupee : effleurer
-    # un bord ne doit pas faire perdre contre un candidat interieur mediocre.
+    # A part touching the edge remains valid - otherwise perfect masks are thrown
+    # away just because the part is large in the frame. The penalty
+    # is PROPORTIONAL to the portion of the contour actually cut: touching
+    # an edge must not cause a loss against a mediocre inner candidate.
     total *= (1.0 - 0.55 * float(np.clip(border_frac / 0.25, 0, 1)))
     return float(total), dict(sharp=sharp, texr=texr, s_sharp=s_sharp, s_tex=s_tex,
                               s_warm=s_warm, s_lum=s_lum, s_geo=s_geo, frac=frac,
@@ -333,8 +333,8 @@ def score(c: Cues, mask, border_frac=0.0, area_range=None):
 
 # ------------------------------------------------------- C. affinage
 def refine(c: Cues, mask):
-    """Re-seuillage local. Un Otsu global est tiré par le reflet ; restreint au
-    voisinage de la pièce, il retrouve le vrai bord."""
+    """Local re-thresholding. A global Otsu is pulled by the reflection; restricted to
+    the neighborhood of the part, it finds the true edge."""
     x, y, bw, bh = cv2.boundingRect(mask)
     pad = int(0.35 * max(bw, bh)) + 10
     x0, y0 = max(0, x - pad), max(0, y - pad)
@@ -350,7 +350,7 @@ def refine(c: Cues, mask):
 
     out = np.zeros_like(mask)
     out[y0:y1, x0:x1] = _clean(local)
-    # ne garder que ce qui recouvre le candidat d'origine
+    # only keep what covers the original candidate
     n, lbl, _st, _ce = cv2.connectedComponentsWithStats(out, 8)
     keep = np.zeros_like(mask)
     for i in range(1, n):
@@ -369,7 +369,7 @@ def refine(c: Cues, mask):
 def segment_cues(bgr, background=None, roi=None, debug=False, do_refine=True,
             min_score=0.18, min_area_frac=0.012, max_area_frac=0.45,
             allow_border=True, area_range=None):
-    """(mask, contour) dans le repère de l'image d'entrée, ou (None, None)."""
+    """(mask, contour) in the coordinate system of the input image, or (None, None)."""
     full_h, full_w = bgr.shape[:2]
     ox = oy = 0
     if roi is not None:
@@ -387,7 +387,7 @@ def segment_cues(bgr, background=None, roi=None, debug=False, do_refine=True,
     for name, hyp in propose(c).items():
         for comp, bfrac in _components(hyp, c.h, c.w, min_area_frac,
                                        max_area_frac, allow_border):
-            # dedup bon marche : bounding box + aire, avant tout calcul lourd
+            # cheap dedup: bounding box + area, before any heavy calculation
             x, y, bw, bh = cv2.boundingRect(comp)
             a = int(np.count_nonzero(comp))
             key = (x // 8, y // 8, bw // 8, bh // 8, a // max(a // 20, 1))
@@ -434,10 +434,10 @@ def segment_cues(bgr, background=None, roi=None, debug=False, do_refine=True,
 
 
 # =================================================== soustraction de fond
-# invariante a l'eclairage
+# illumination invariant
 def segment_bg(bgr, background, thr=0.16, chroma_thr=6.0, min_frac=0.002,
                reject_border=True, debug=False):
-    """Segmentation par comparaison a une image de la scene vide.
+    """Segmentation by comparison to an image of the empty scene.
 
     Une soustraction naive (|frame - fond|) s'effondre des que l'eclairage a
     change depuis la calibration : toute la table devient "objet".
@@ -472,16 +472,16 @@ def segment_bg(bgr, background, thr=0.16, chroma_thr=6.0, min_frac=0.002,
     da = lf[:, :, 1] - lb[:, :, 1]
     db = lf[:, :, 2] - lb[:, :, 2]
 
-    # Le champ d'eclairage doit etre estime SANS l'objet : sinon le signal fort
-    # de la piece fuit dans le flou et fabrique un halo qui noie le contraste.
-    # 1er passage : ou est grossierement l'objet ?
+    # The lighting field must be estimated WITHOUT the object: otherwise the strong signal
+    # of the part leaks into the blur and creates a halo that drowns the contrast.
+    # 1st pass: where is the object roughly?
     rough = (np.abs(R) > 0.55) | (np.hypot(da, db) > 14.0)
     rough = cv2.dilate(rough.astype(np.uint8), np.ones((9, 9), np.uint8), iterations=2) > 0
     if rough.mean() > 0.75:          # garde-fou : tout ne peut pas etre objet
         rough[:] = False
 
     def smooth_field(x):
-        """Champ lisse estime par convolution normalisee, objet exclu."""
+        """Smooth field estimated by normalized convolution, object excluded."""
         wgt = (~rough).astype(np.float32)
         xs = x * wgt
         sm = max(H, W) / 8.0
@@ -529,17 +529,17 @@ def segment_bg(bgr, background, thr=0.16, chroma_thr=6.0, min_frac=0.002,
 # =================================================== point d'entree unique
 def segment(bgr, background=None, roi=None, debug=False, do_refine=True,
             area_range=None):
-    """Segmentation de la piece. C'est la fonction a appeler.
+    """Part segmentation. This is the function to call.
 
-    Strategie : si un modele de fond existe, on l'utilise (le plus precis et le
-    plus rapide) ; s'il est perime - l'eclairage a change depuis la calibration,
-    le resultat devient implausible - on bascule automatiquement sur la voie
-    multi-indices, qui ne depend d'aucune calibration.
+    Strategy: if a background model exists, use it (most precise and
+    fastest); if it's stale - lighting changed since calibration,
+    the result becomes implausible - we automatically fallback to the
+    multi-cue path, which depends on no calibration.
 
-    roi = (x, y, w, h) : zone de travail. Tout ce qui est hors zone est ignore
-    AVANT toute analyse. C'est le reglage le plus rentable quand la scene
-    contient des distracteurs clairs (un sol, un carton, un plan de travail) :
-    ils ne peuvent plus concourir.
+    roi = (x, y, w, h) : work zone. Everything outside the zone is ignored
+    BEFORE any analysis. This is the most profitable setting when the scene
+    contains bright distractors (a floor, a box, a workbench):
+    they can no longer compete.
     """
     full_h, full_w = bgr.shape[:2]
     ox = oy = 0
@@ -558,7 +558,7 @@ def segment(bgr, background=None, roi=None, debug=False, do_refine=True,
     if roi is None or out[0] is None:
         return out
 
-    # on remet le masque et le contour dans le repere de l'image complete
+    # put the mask and contour back into the full image coordinate system
     mask = np.zeros((full_h, full_w), np.uint8)
     mask[oy:oy + bgr.shape[0], ox:ox + bgr.shape[1]] = out[0]
     cnt = out[1] + np.array([[ox, oy]])
@@ -572,7 +572,7 @@ def _segment_core(bgr, background, debug, do_refine, area_range=None):
             c = Cues(bgr)
             m = cv2.resize(res[0], (c.w, c.h), interpolation=cv2.INTER_NEAREST)
             sc, dbg = score(c, m)
-            if sc >= 0.22:                       # le fond tient encore
+            if sc >= 0.22:                       # the background still holds
                 if debug:
                     dbg.update(source="background", score=sc)
                     return res[0], res[1], dbg
@@ -582,8 +582,8 @@ def _segment_core(bgr, background, debug, do_refine, area_range=None):
 
 
 def background_is_stale(bgr, background, frac=0.45):
-    """True si le modele de fond ne decrit plus la scene (eclairage change,
-    camera bougee). Sert a declencher une recalibration."""
+    """True if the background model no longer describes the scene (changed lighting,
+    camera moved). Used to trigger a recalibration."""
     h, w = bgr.shape[:2]
     k = 240 / max(h, w)
     f = cv2.resize(bgr, None, fx=k, fy=k, interpolation=cv2.INTER_AREA)
@@ -596,20 +596,20 @@ def background_is_stale(bgr, background, frac=0.45):
 # ============================================ candidats multiples
 def segment_candidates(bgr, background=None, roi=None, area_range=None,
                        top_k=8, min_score=0.10, do_refine=True):
-    """Renvoie les K meilleurs masques CANDIDATS au lieu d'un seul.
+    """Returns the top K CANDIDATE masks instead of just one.
 
-    Pourquoi : le score de plausibilite ne sait pas dire si un masque represente
-    l'objet ENTIER. Une equerre amputee de sa tete par une ombre reste un
-    candidat parfaitement "plausible" - bord net, epaisseur correcte, aire dans
-    la plage - et ressemble alors a un cylindre. Aucun critere local ne peut
-    trancher.
+    Why: the plausibility score cannot tell if a mask represents
+    the ENTIRE object. A bracket amputated of its head by a shadow remains a
+    perfectly "plausible" candidate - sharp edge, correct thickness, area in
+    range - and thus resembles a cylinder. No local criterion can
+    decide.
 
-    Ce qui peut trancher, c'est le MODELE : un morceau ne ressemble a aucune
-    reference, la piece entiere si. On laisse donc la reconnaissance arbitrer
-    (voir PartClassifier.classify_candidates). Cette fonction se contente de
-    proposer, en conservant la note de plausibilite comme garde-fou.
+    What can decide is the MODEL: a piece doesn't resemble any
+    reference, the whole part does. So we let the recognition arbitrate
+    (see PartClassifier.classify_candidates). This function just
+    proposes, keeping the plausibility score as a safeguard.
 
-    Renvoie [(mask, contour, plausibilite)], du plus plausible au moins.
+    Returns [(mask, contour, plausibility)], from most plausible to least.
     """
     full_h, full_w = bgr.shape[:2]
     ox = oy = 0
