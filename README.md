@@ -35,6 +35,8 @@ Real-time detection and classification of **sand cores** (4 types) using a stand
 USB camera, **no GPU**, **no neural networks** — pure deterministic geometry and
 morphology.
 
+![HUD Preview — all 4 types detected](refs/hud_preview.png)
+
 | File | Role |
 |---|---|
 | **`live.py`** | Main app: video stream, background management, classification, HUD |
@@ -43,6 +45,12 @@ morphology.
 | **`hud.py`** | OpenCV HUD with type badge, confidence gauge, light halo |
 | **`enroll.py`** | Creates / updates `model.npz` live or from photos |
 | **`check_camera.py`** | USB camera diagnostics |
+
+### Enrolled Silhouettes — `model_refs.png`
+
+All 32 enrolled silhouettes (8 poses per type). Inspect this sheet after enrollment to confirm every pose was captured correctly.
+
+![Enrolled silhouette reference sheet](model_refs.png)
 
 ### Quick Start
 
